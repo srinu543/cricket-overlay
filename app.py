@@ -8,9 +8,7 @@ from playwright.sync_api import sync_playwright
 
 app = Flask(__name__)
 
-# Your overlays.uno API endpoint
 UNO_API_URL = "https://app.overlays.uno/apiv2/controlapps/3faAKlnUjVC21DaVd2bvYY/api"
-# Your CricBay live match URL
 CRICBAY_MATCH_URL = "https://www.cricbay.com/view/31662"
 
 last_state = None
@@ -21,12 +19,23 @@ def home():
 
 def fetch_page_with_playwright(url):
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        # Launch chromium with flags required for cloud environments
+        browser = p.chromium.launch(
+            headless=True,
+            args=["--no-sandbox", "--disable-setuid-sandbox"]
+        )
         page = browser.new_page()
-        page.goto(url, wait_until="networkidle")
-        page.wait_for_timeout(2000)
+        print(f"Opening browser for: {url}")
+        
+        # Use domcontentloaded instead of networkidle to prevent hanging
+        page.goto(url, timeout=30000, wait_until="domcontentloaded")
+        
+        # Extra safety pause for React to mount the scores
+        page.wait_for_timeout(3000)
+        
         html_content = page.content()
         browser.close()
+        print("Successfully fetched HTML via Playwright.")
         return html_content
 
 def parse_cricbay_scorecard(html_content):
@@ -105,7 +114,7 @@ def update_uno_overlay(data):
     payload = {"command": "SetOverlayContent", "content": data}
     try:
         response = requests.put(UNO_API_URL, json=payload, timeout=5)
-        print(f"Overlay Update Response: {response.status_code}")
+        print(f"Overlay Update Response Status: {response.status_code}")
     except Exception as e:
         print(f"API Request Error: {e}")
 
