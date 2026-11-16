@@ -4,39 +4,23 @@ import threading
 import requests
 from bs4 import BeautifulSoup
 from flask import Flask
-from playwright.sync_api import sync_playwright
 
 app = Flask(__name__)
 
+# Your overlays.uno API endpoint
 UNO_API_URL = "https://app.overlays.uno/apiv2/controlapps/3faAKlnUjVC21DaVd2bvYY/api"
+# Your CricBay live match URL
 CRICBAY_MATCH_URL = "https://www.cricbay.com/view/31662"
+
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+}
 
 last_state = None
 
 @app.route("/")
 def home():
     return "CricBay Overlay Bridge is Running!"
-
-def fetch_page_with_playwright(url):
-    with sync_playwright() as p:
-        # Launch chromium with flags required for cloud environments
-        browser = p.chromium.launch(
-            headless=True,
-            args=["--no-sandbox", "--disable-setuid-sandbox"]
-        )
-        page = browser.new_page()
-        print(f"Opening browser for: {url}")
-        
-        # Use domcontentloaded instead of networkidle to prevent hanging
-        page.goto(url, timeout=30000, wait_until="domcontentloaded")
-        
-        # Extra safety pause for React to mount the scores
-        page.wait_for_timeout(3000)
-        
-        html_content = page.content()
-        browser.close()
-        print("Successfully fetched HTML via Playwright.")
-        return html_content
 
 def parse_cricbay_scorecard(html_content):
     soup = BeautifulSoup(html_content, "html.parser")
@@ -107,32 +91,35 @@ def parse_cricbay_scorecard(html_content):
             "BowlerFigures": bowler_figures
         }
     except Exception as e:
-        print(f"Parsing Error: {e}")
+        print(f"Parsing Error: {e}", flush=True)
         return None
 
 def update_uno_overlay(data):
     payload = {"command": "SetOverlayContent", "content": data}
     try:
         response = requests.put(UNO_API_URL, json=payload, timeout=5)
-        print(f"Overlay Update Response Status: {response.status_code}")
+        print(f"Overlay Update Response Status: {response.status_code}", flush=True)
     except Exception as e:
-        print(f"API Request Error: {e}")
+        print(f"API Request Error: {e}", flush=True)
 
 def background_scraper():
     global last_state
-    print("Background scraper thread started successfully.")
+    print("Background scraper thread started successfully.", flush=True)
     while True:
         try:
-            print(f"Fetching CricBay URL: {CRICBAY_MATCH_URL}")
-            html_content = fetch_page_with_playwright(CRICBAY_MATCH_URL)
-            current_state = parse_cricbay_scorecard(html_content)
-            print(f"Parsed State: {current_state}")
+            print(f"Fetching CricBay URL: {CRICBAY_MATCH_URL}", flush=True)
+            resp = requests.get(CRICBAY_MATCH_URL, headers=HEADERS, timeout=10)
+            print(f"CricBay Response Status: {resp.status_code}", flush=True)
             
-            if current_state and current_state != last_state:
-                update_uno_overlay(current_state)
-                last_state = current_state
+            if resp.status_code == 200:
+                current_state = parse_cricbay_scorecard(resp.text)
+                print(f"Parsed State: {current_state}", flush=True)
+                
+                if current_state and current_state != last_state:
+                    update_uno_overlay(current_state)
+                    last_state = current_state
         except Exception as e:
-            print(f"CRITICAL SCRAPER ERROR: {e}")
+            print(f"CRITICAL SCRAPER ERROR: {e}", flush=True)
         time.sleep(5)
 
 if __name__ == "__main__":
