@@ -98,34 +98,38 @@ def parse_cricbay_scorecard(html_content):
             "BowlerFigures": bowler_figures
         }
     except Exception as e:
+        print(f"Parsing Error: {e}")
         return None
 
 def update_uno_overlay(data):
     payload = {"command": "SetOverlayContent", "content": data}
     try:
-        requests.put(UNO_API_URL, json=payload, timeout=5)
-    except Exception:
-        pass
+        response = requests.put(UNO_API_URL, json=payload, timeout=5)
+        print(f"Overlay Update Response: {response.status_code}")
+    except Exception as e:
+        print(f"API Request Error: {e}")
 
 def background_scraper():
     global last_state
+    print("Background scraper thread started successfully.")
     while True:
         try:
+            print(f"Fetching CricBay URL: {CRICBAY_MATCH_URL}")
             html_content = fetch_page_with_playwright(CRICBAY_MATCH_URL)
             current_state = parse_cricbay_scorecard(html_content)
+            print(f"Parsed State: {current_state}")
+            
             if current_state and current_state != last_state:
                 update_uno_overlay(current_state)
                 last_state = current_state
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"CRITICAL SCRAPER ERROR: {e}")
         time.sleep(5)
 
 if __name__ == "__main__":
-    # Start background scraper thread
     t = threading.Thread(target=background_scraper)
     t.daemon = True
     t.start()
     
-    # Run Flask web server
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
