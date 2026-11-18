@@ -24,16 +24,11 @@ def parse_cricheroes_scorecard(page):
         # DEBUG: Print a chunk of the page text to Render logs to inspect formatting
         print(f"--- PAGE TEXT SAMPLE ---\n{body_text[:400]}\n------------------------", flush=True)
 
-        runs = 0
-        wickets = 0
-        overs = 0.0
-        team_name = "Team 1"
-
         return {
-            "Team Batting": team_name,
-            "Batting Team Runs": runs,
-            "Batting Team Wickets": wickets,
-            "Overs": overs,
+            "Team Batting": "Team 1",
+            "Batting Team Runs": 0,
+            "Batting Team Wickets": 0,
+            "Overs": 0.0,
             "Bastman 1": "Batter 1",
             "Batsman 1 Score": 0,
             "Batsman 2": "Batter 2",
@@ -79,7 +74,7 @@ def background_scraper():
         except Exception as e:
             print(f"Navigation error: {e}", flush=True)
 
-        while Time.sleep(5) or True:
+        while True:
             try:
                 page.reload(wait_until="networkidle", timeout=30000)
                 time.sleep(3)
