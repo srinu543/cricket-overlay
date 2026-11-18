@@ -23,66 +23,28 @@ def home():
 def parse_cricheroes_scorecard(html_content):
     soup = BeautifulSoup(html_content, "html.parser")
     try:
-        # Extract Team Names from CricHeroes scorecard header
+        # Extract Team Names
         team_name_elements = soup.select(".styles-module-scss-module__0yl5Ha__teamName")
         team1_name = team_name_elements[0].get_text(strip=True) if len(team_name_elements) > 0 else "Team A"
-        team2_name = team_name_elements[1].get_text(strip=True) if len(team_name_elements) > 1 else "Team B"
 
-        # Extract Overs info
+        # Extract Overs info for Team 1 score baby step
         over_spans = soup.select(".styles-module-scss-module__0yl5Ha__overSpan")
         team1_overs = over_spans[0].get_text(strip=True) if len(over_spans) > 0 else "(0.0 Ov)"
-        team2_overs = over_spans[1].get_text(strip=True) if len(over_spans) > 1 else "(0.0 Ov)"
 
-        # Extract Batters from live table
-        batter_rows = soup.select(".styles-module-scss-module__Cdoeoq__table tbody tr")
-        batter1_name, batter1_balls = "Batter 1", "0"
-        batter2_name, batter2_balls = "Batter 2", "0"
-
-        if len(batter_rows) >= 1:
-            cols1 = batter_rows[0].select("td")
-            if len(cols1) >= 3:
-                batter1_name = cols1[0].get_text(strip=True)
-                batter1_balls = cols1[2].get_text(strip=True)
-
-        if len(batter_rows) >= 2:
-            cols2 = batter_rows[1].select("td")
-            if len(cols2) >= 3:
-                batter2_name = cols2[0].get_text(strip=True)
-                batter2_balls = cols2[2].get_text(strip=True)
-
-        # Extract Bowler info
-        bowler_rows = soup.select(".styles-module-scss-module__hqYHwW__wrapper tbody tr")
-        bowler_name, bowler_overs = "Bowler", "0.0"
-        bowler_runs, bowler_wickets, bowler_econ = "0", "0", "0.0"
-
-        if len(bowler_rows) >= 1:
-            b_cols = bowler_rows[0].select("td")
-            if len(b_cols) >= 6:
-                bowler_name = b_cols[0].get_text(strip=True)
-                bowler_overs = b_cols[1].get_text(strip=True)
-                bowler_runs = b_cols[3].get_text(strip=True)
-                bowler_wickets = b_cols[4].get_text(strip=True)
-                bowler_econ = b_cols[5].get_text(strip=True)
-
-        bowler_figures = f"{bowler_overs} Ov - {bowler_runs} R - {bowler_wickets} W (Eco: {bowler_econ})"
-
+        # Baby step: focusing on team name and score first
         return {
             "Team1Name": team1_name,
-            "Team1Score": team1_overs,
-            "Team2Name": team2_name,
-            "Team2Score": team2_overs,
-            "StrikerName": f"{batter1_name} ({batter1_balls})",
-            "NonStrikerName": f"{batter2_name} ({batter2_balls})",
-            "BowlerName": f"{bowler_name} | {bowler_figures}"
+            "Team1Score": team1_overs
         }
     except Exception as e:
         print(f"Parsing Error: {e}", flush=True)
         return None
 
 def update_uno_overlay(data):
+    # FIXED: The API schema requires "id" instead of "overlayId"
     payload = {
         "command": "SetOverlayContent",
-        "overlayId": OVERLAY_ID,
+        "id": OVERLAY_ID,
         "content": data
     }
     try:
