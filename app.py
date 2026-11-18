@@ -10,8 +10,6 @@ app = Flask(__name__)
 
 UNO_API_URL = "https://app.overlays.uno/apiv2/controlapps/3faAKlnUjVC21DaVd2bvYY/api"
 OVERLAY_ID = "8a45f609-8123-4791-9b0b-00f84c090992"
-
-# You can change this URL whenever you start a new match
 TARGET_MATCH_URL = "https://cricheroes.com/scorecard/28364240/individual/test-vs-test2/live"
 
 last_state = None
@@ -23,33 +21,47 @@ def home():
 def parse_cricheroes_scorecard(html_content):
     soup = BeautifulSoup(html_content, "html.parser")
     try:
-        # Extract Overs info (e.g. "(0.4 Ov)")
+        # Extract Team Names from scorecard header
+        team_name_elements = soup.select(".styles-module-scss-module__0yl5Ha__teamName")
+        team1_name = team_name_elements[0].get_text(strip=True) if len(team_name_elements) > 0 else "Team 1"
+
+        # Extract Overs info
         over_spans = soup.select(".styles-module-scss-module__0yl5Ha__overSpan")
         overs_text = over_spans[0].get_text(strip=True) if len(over_spans) > 0 else "0.0"
         clean_overs = overs_text.replace("(", "").replace(" Ov)", "").strip()
 
-        # Extract Team Names
-        team_name_elements = soup.select(".styles-module-scss-module__0yl5Ha__teamName")
-        team1_name = team_name_elements[0].get_text(strip=True) if len(team_name_elements) > 0 else "Team 1"
-
-        # Extract recent commentary text to dynamically pull live runs if canvas text is rendered
-        commentary_boxes = soup.select(".styles-module-scss-module__mGEZWa__commentaryText")
-        latest_commentary = commentary_boxes[0].get_text(strip=True) if len(commentary_boxes) > 0 else ""
-
-        # Default fallback values
-        runs = 7
+        # Extract score elements directly from the live scorecard score container
+        # CricHeroes typically renders scores in elements with run/wicket containers or score headers
+        score_elements = soup.select(".styles-module-scss-module__0yl5Ha__teamScore, .score-details, span[class*='teamScore']")
+        
+        runs = 0
         wickets = 0
 
-        # Simple parse from latest commentary text if available (e.g., "Test move to 7/0")
-        if "move to" in latest_commentary:
-            try:
-                score_part = latest_commentary.split("move to ")[1].split(".")[0]
-                if "/" in score_part:
-                    runs, wickets = score_part.split("/")
-                    runs = int(runs)
-                    wickets = int(wickets)
-            except Exception:
-                pass
+        if len(score_elements) > 0:
+            score_text = score_elements[0].get_text(strip=True) # e.g., "10/1" or "3/0"
+            if "/" in score_text:
+                parts = score_text.split("/")
+                runs = int(parts[0].strip() or 0)
+                wickets = int(parts[1].strip() or 0)
+            else:
+                try:
+                    runs = int(score_text)
+                except ValueError:
+                    pass
+
+        # If specific score elements aren't caught by class, fallback to parsing active scorecard summary text
+        if runs == 0:
+            summary_divs = soup.select("div[class*='scoreCard'], div[class*='matchHeader']")
+            for div in summary_divs:
+                text = div.get_text()
+                if "/" in text and ("Ov" in text or "Overs" in text):
+                    # Attempt to locate score pattern like 10/1
+                    words = text.split()
+                    for w in words:
+                        if "/" in w and w.replace("/", "").isdigit():
+                            r, wkt = w.split("/")
+                            runs, wickets = int(r), int(wkt)
+                            break
 
         # Extract Batters
         batter_rows = soup.select(".styles-module-scss-module__Cdoeoq__table tbody tr")
@@ -63,7 +75,7 @@ def parse_cricheroes_scorecard(html_content):
                 try:
                     batter1_runs = int(cols1[1].get_text(strip=True) or 0)
                 except ValueError:
-                    batter1_runs = 2  # Fallback based on live state
+                    pass
 
         if len(batter_rows) >= 2:
             cols2 = batter_rows[1].select("td")
@@ -72,11 +84,11 @@ def parse_cricheroes_scorecard(html_content):
                 try:
                     batter2_runs = int(cols2[1].get_text(strip=True) or 0)
                 except ValueError:
-                    batter2_runs = 2
+                    pass
 
         # Extract Bowler info
         bowler_rows = soup.select(".styles-module-scss-module__hqYHwW__wrapper tbody tr")
-        bowler_name, bowler_overs_val, bowler_runs_val, bowler_wickets_val = "Bowler", 0, 0, 0
+        bowler_name, bowler_overs_val, bowler_runs_val, bowler_wickets_val = "Bowler", 0.0, 0, 0
 
         if len(bowler_rows) >= 1:
             b_cols = bowler_rows[0].select("td")
@@ -138,7 +150,6 @@ def background_scraper():
 
         while True:
             try:
-                # Periodically reload or refresh the page content to capture live updates via WebSockets/DOM changes
                 page.reload(wait_until="domcontentloaded", timeout=30000)
                 time.sleep(3)
                 
