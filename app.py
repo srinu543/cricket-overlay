@@ -8,8 +8,10 @@ from playwright.sync_api import sync_playwright
 
 app = Flask(__name__)
 
-# Your overlays.uno API endpoint
+# Your overlays.uno API endpoint and Overlay ID
 UNO_API_URL = "https://app.overlays.uno/apiv2/controlapps/3faAKlnUjVC21DaVd2bvYY/api"
+OVERLAY_ID = "3faAKlnUjVC21DaVd2bvYY"
+
 TARGET_MATCH_URL = "https://cricheroes.com/scorecard/28364240/individual/test-vs-test2/live"
 
 last_state = None
@@ -21,7 +23,7 @@ def home():
 def parse_cricheroes_scorecard(html_content):
     soup = BeautifulSoup(html_content, "html.parser")
     try:
-        # Extract Team Names
+        # Extract Team Names from CricHeroes scorecard header
         team_name_elements = soup.select(".styles-module-scss-module__0yl5Ha__teamName")
         team1_name = team_name_elements[0].get_text(strip=True) if len(team_name_elements) > 0 else "Team A"
         team2_name = team_name_elements[1].get_text(strip=True) if len(team_name_elements) > 1 else "Team B"
@@ -31,7 +33,7 @@ def parse_cricheroes_scorecard(html_content):
         team1_overs = over_spans[0].get_text(strip=True) if len(over_spans) > 0 else "(0.0 Ov)"
         team2_overs = over_spans[1].get_text(strip=True) if len(over_spans) > 1 else "(0.0 Ov)"
 
-        # Extract Batters
+        # Extract Batters from live table
         batter_rows = soup.select(".styles-module-scss-module__Cdoeoq__table tbody tr")
         batter1_name, batter1_balls = "Batter 1", "0"
         batter2_name, batter2_balls = "Batter 2", "0"
@@ -64,7 +66,6 @@ def parse_cricheroes_scorecard(html_content):
 
         bowler_figures = f"{bowler_overs} Ov - {bowler_runs} R - {bowler_wickets} W (Eco: {bowler_econ})"
 
-        # Standard payload formatting matching typical overlays.uno schemas
         return {
             "Team1Name": team1_name,
             "Team1Score": team1_overs,
@@ -79,8 +80,11 @@ def parse_cricheroes_scorecard(html_content):
         return None
 
 def update_uno_overlay(data):
-    # Depending on your overlays.uno template, content keys can be sent directly or nested
-    payload = {"command": "SetOverlayContent", "content": data}
+    payload = {
+        "command": "SetOverlayContent",
+        "overlayId": OVERLAY_ID,
+        "content": data
+    }
     try:
         response = requests.put(UNO_API_URL, json=payload, timeout=5)
         print(f"Overlay Update Response Status: {response.status_code} - Response: {response.text}", flush=True)
@@ -101,12 +105,10 @@ def background_scraper():
         print(f"Navigating to Target Match: {TARGET_MATCH_URL}", flush=True)
         try:
             page.goto(TARGET_MATCH_URL, wait_until="domcontentloaded", timeout=60000)
-            
-            # Wait until the dynamic team name element actually appears in the DOM
-            page.wait_for_selector(".styles-module-scss-module__0yl5Ha__teamName", timeout=15000)
-            print("Target match elements successfully loaded!", flush=True)
+            time.sleep(6)
+            print("Target match page loaded successfully!", flush=True)
         except Exception as e:
-            print(f"Navigation or selector wait error: {e}", flush=True)
+            print(f"Navigation error: {e}", flush=True)
 
         while True:
             try:
