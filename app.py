@@ -8,8 +8,11 @@ from playwright.sync_api import sync_playwright
 
 app = Flask(__name__)
 
-# Your overlays.uno API endpoint
+# Control App URL endpoint
 UNO_API_URL = "https://app.overlays.uno/apiv2/controlapps/3faAKlnUjVC21DaVd2bvYY/api"
+# Correct Overlay Instance ID from the API description
+OVERLAY_ID = "8a45f609-8123-4791-9b0b-00f84c090992"
+
 TARGET_MATCH_URL = "https://cricheroes.com/scorecard/28364240/individual/test-vs-test2/live"
 
 last_state = None
@@ -21,23 +24,24 @@ def home():
 def parse_cricheroes_scorecard(html_content):
     soup = BeautifulSoup(html_content, "html.parser")
     try:
-        # Extract Overs info
+        # Extract Overs info (e.g. "(0.4 Ov)")
         over_spans = soup.select(".styles-module-scss-module__0yl5Ha__overSpan")
         overs_text = over_spans[0].get_text(strip=True) if len(over_spans) > 0 else "0.0"
         clean_overs = overs_text.replace("(", "").replace(" Ov)", "").strip()
 
+        # Using exact Field IDs from the overlays.uno API description table
         return {
-            "overs": clean_overs,
-            "battingTeamRuns": "7"
+            "Batting Team Runs": 7,
+            "Overs": float(clean_overs) if clean_overs else 0.0
         }
     except Exception as e:
         print(f"Parsing Error: {e}", flush=True)
         return None
 
 def update_uno_overlay(data):
-    # Payload structured without redundant id since it's in the API URL
     payload = {
         "command": "SetOverlayContent",
+        "id": OVERLAY_ID,
         "content": data
     }
     try:
