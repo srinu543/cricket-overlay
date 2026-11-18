@@ -10,7 +10,6 @@ app = Flask(__name__)
 
 # Your overlays.uno API endpoint
 UNO_API_URL = "https://app.overlays.uno/apiv2/controlapps/3faAKlnUjVC21DaVd2bvYY/api"
-# Your live CricHeroes match URL
 TARGET_MATCH_URL = "https://cricheroes.com/scorecard/28364240/individual/test-vs-test2/live"
 
 last_state = None
@@ -32,7 +31,7 @@ def parse_cricheroes_scorecard(html_content):
         team1_overs = over_spans[0].get_text(strip=True) if len(over_spans) > 0 else "(0.0 Ov)"
         team2_overs = over_spans[1].get_text(strip=True) if len(over_spans) > 1 else "(0.0 Ov)"
 
-        # Extract Batters from live scorecard table
+        # Extract Batters
         batter_rows = soup.select(".styles-module-scss-module__Cdoeoq__table tbody tr")
         batter1_name, batter1_balls = "Batter 1", "0"
         batter2_name, batter2_balls = "Batter 2", "0"
@@ -65,27 +64,26 @@ def parse_cricheroes_scorecard(html_content):
 
         bowler_figures = f"{bowler_overs} Ov - {bowler_runs} R - {bowler_wickets} W (Eco: {bowler_econ})"
 
+        # Standard payload formatting matching typical overlays.uno schemas
         return {
             "Team1Name": team1_name,
-            "Team1Score": f"Score {team1_overs}",
+            "Team1Score": team1_overs,
             "Team2Name": team2_name,
-            "Team2Score": f"Score {team2_overs}",
-            "StrikerName": batter1_name,
-            "StrikerScore": f"B: {batter1_balls}",
-            "NonStrikerName": batter2_name,
-            "NonStrikerScore": f"B: {batter2_balls}",
-            "BowlerName": bowler_name,
-            "BowlerFigures": bowler_figures
+            "Team2Score": team2_overs,
+            "StrikerName": f"{batter1_name} ({batter1_balls})",
+            "NonStrikerName": f"{batter2_name} ({batter2_balls})",
+            "BowlerName": f"{bowler_name} | {bowler_figures}"
         }
     except Exception as e:
         print(f"Parsing Error: {e}", flush=True)
         return None
 
 def update_uno_overlay(data):
+    # Depending on your overlays.uno template, content keys can be sent directly or nested
     payload = {"command": "SetOverlayContent", "content": data}
     try:
         response = requests.put(UNO_API_URL, json=payload, timeout=5)
-        print(f"Overlay Update Response Status: {response.status_code}", flush=True)
+        print(f"Overlay Update Response Status: {response.status_code} - Response: {response.text}", flush=True)
     except Exception as e:
         print(f"API Request Error: {e}", flush=True)
 
@@ -103,13 +101,15 @@ def background_scraper():
         print(f"Navigating to Target Match: {TARGET_MATCH_URL}", flush=True)
         try:
             page.goto(TARGET_MATCH_URL, wait_until="domcontentloaded", timeout=60000)
-            time.sleep(5) # Allow React app to initialize
+            
+            # Wait until the dynamic team name element actually appears in the DOM
+            page.wait_for_selector(".styles-module-scss-module__0yl5Ha__teamName", timeout=15000)
+            print("Target match elements successfully loaded!", flush=True)
         except Exception as e:
-            print(f"Initial navigation error: {e}", flush=True)
+            print(f"Navigation or selector wait error: {e}", flush=True)
 
         while True:
             try:
-                # Refresh page or pull updated DOM content dynamically
                 html_content = page.content()
                 current_state = parse_cricheroes_scorecard(html_content)
                 
@@ -123,11 +123,9 @@ def background_scraper():
             time.sleep(5)
 
 if __name__ == "__main__":
-    # Start background scraping thread
     t = threading.Thread(target=background_scraper)
     t.daemon = True
     t.start()
     
-    # Run Flask web server to satisfy Render port binding requirements
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
