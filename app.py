@@ -9,84 +9,76 @@ app = Flask(__name__)
 
 # Your overlays.uno API endpoint
 UNO_API_URL = "https://app.overlays.uno/apiv2/controlapps/3faAKlnUjVC21DaVd2bvYY/api"
-# Your CricBay live match URL
-CRICBAY_MATCH_URL = "https://www.cricbay.com/view/31662"
+# Your live CricHeroes match URL
+CRICHEROES_MATCH_URL = "https://cricheroes.com/scorecard/28364240/individual/test-vs-test2/live"
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 }
 
 last_state = None
 
 @app.route("/")
 def home():
-    return "CricBay Overlay Bridge is Running!"
+    return "CricHeroes Overlay Bridge is Running!"
 
-def parse_cricbay_scorecard(html_content):
+def parse_cricheroes_scorecard(html_content):
     soup = BeautifulSoup(html_content, "html.parser")
     try:
-        team_rows = soup.select(".px-3.py-1 > div")
-        team1_name, team1_score, team1_wickets = "", "", ""
-        team2_name, team2_score, team2_wickets = "", "", ""
-        
-        if len(team_rows) >= 1:
-            r1 = team_rows[0]
-            team1_name = r1.select_one(".display-6").get_text(strip=True)
-            t1_score_text = r1.select_one(".display-7").get_text(strip=True)
-            if "/" in t1_score_text:
-                team1_score, team1_wickets = t1_score_text.split("/")
-                
-        if len(team_rows) >= 2:
-            r2 = team_rows[1]
-            team2_name = r2.select_one(".display-6").get_text(strip=True)
-            t2_score_text = r2.select_one(".display-7").get_text(strip=True)
-            if "/" in t2_score_text:
-                team2_score, team2_wickets = t2_score_text.split("/")
+        # Extract Team Names
+        team_name_elements = soup.select(".styles-module-scss-module__0yl5Ha__teamName")
+        team1_name = team_name_elements[0].get_text(strip=True) if len(team_name_elements) > 0 else "Team A"
+        team2_name = team_name_elements[1].get_text(strip=True) if len(team_name_elements) > 1 else "Team B"
 
-        batters = soup.select(".card.p-1.mt-3 .d-flex.align-items-center.py-2")
-        batter1_name, batter1_runs, batter1_balls = "", "", ""
-        batter2_name, batter2_runs, batter2_balls = "", "", ""
-        
-        for b in batters:
-            name_el = b.select_one("a.text-truncate")
-            if not name_el:
-                continue
-            name = name_el.get_text(strip=True)
-            stats = b.select(".audience-live-stat")
-            if len(stats) >= 2:
-                runs = stats[0].get_text(strip=True)
-                balls = stats[1].get_text(strip=True)
-                is_striker = b.select_one(".text-danger") is not None
-                if is_striker:
-                    batter1_name, batter1_runs, batter1_balls = name, runs, balls
-                else:
-                    batter2_name, batter2_runs, batter2_balls = name, runs, balls
+        # Extract Overs info
+        over_spans = soup.select(".styles-module-scss-module__0yl5Ha__overSpan")
+        team1_overs = over_spans[0].get_text(strip=True) if len(over_spans) > 0 else "(0.0 Ov)"
+        team2_overs = over_spans[1].get_text(strip=True) if len(over_spans) > 1 else "(0.0 Ov)"
 
-        bowler_row = soup.select_one(".card.p-1.mt-2 .d-flex.align-items-center.py-2")
-        bowler_name, bowler_figures = "", ""
-        if bowler_row:
-            b_name_el = bowler_row.select_one("a.text-truncate")
-            if b_name_el:
-                bowler_name = b_name_el.get_text(strip=True)
-            b_stats = bowler_row.select(".audience-live-bowler-stat")
-            b_wide = bowler_row.select_one(".audience-live-bowler-stat-wide")
-            if len(b_stats) >= 4 and b_wide:
-                overs = b_stats[0].get_text(strip=True)
-                maidens = b_stats[1].get_text(strip=True)
-                runs_conceded = b_stats[2].get_text(strip=True)
-                wickets_taken = b_stats[3].get_text(strip=True)
-                economy = b_wide.get_text(strip=True)
-                bowler_figures = f"{overs}(O) - {maidens}(M) - {runs_conceded}(R) - {wickets_taken}(W) - {economy}(E)"
+        # Extract Batters from the live scorecard table
+        batter_rows = soup.select(".styles-module-scss-module__Cdoeoq__table tbody tr")
+        batter1_name, batter1_runs, batter1_balls = "Batter 1", "0", "0"
+        batter2_name, batter2_runs, batter2_balls = "Batter 2", "0", "0"
+
+        if len(batter_rows) >= 1:
+            cols1 = batter_rows[0].select("td")
+            if len(cols1) >= 3:
+                batter1_name = cols1[0].get_text(strip=True)
+                # CricHeroes uses canvas for runs, but balls is plain text in col 2
+                batter1_balls = cols1[2].get_text(strip=True)
+
+        if len(batter_rows) >= 2:
+            cols2 = batter_rows[1].select("td")
+            if len(cols2) >= 3:
+                batter2_name = cols2[0].get_text(strip=True)
+                batter2_balls = cols2[2].get_text(strip=True)
+
+        # Extract Bowler info from the second table
+        bowler_rows = soup.select(".styles-module-scss-module__hqYHwW__wrapper tbody tr")
+        bowler_name, bowler_overs = "Bowler", "0.0"
+        bowler_runs, bowler_wickets, bowler_econ = "0", "0", "0.0"
+
+        if len(bowler_rows) >= 1:
+            b_cols = bowler_rows[0].select("td")
+            if len(b_cols) >= 6:
+                bowler_name = b_cols[0].get_text(strip=True)
+                bowler_overs = b_cols[1].get_text(strip=True)
+                bowler_runs = b_cols[3].get_text(strip=True)
+                bowler_wickets = b_cols[4].get_text(strip=True)
+                bowler_econ = b_cols[5].get_text(strip=True)
+
+        bowler_figures = f"{bowler_overs} Ov - {bowler_runs} R - {bowler_wickets} W (Eco: {bowler_econ})"
 
         return {
             "Team1Name": team1_name,
-            "Team1Score": f"{team1_score}/{team1_wickets}",
+            "Team1Score": f"Score {team1_overs}",
             "Team2Name": team2_name,
-            "Team2Score": f"{team2_score}/{team2_wickets}",
+            "Team2Score": f"Score {team2_overs}",
             "StrikerName": batter1_name,
-            "StrikerScore": f"{batter1_runs} ({batter1_balls})",
+            "StrikerScore": f"B: {batter1_balls}",
             "NonStrikerName": batter2_name,
-            "NonStrikerScore": f"{batter2_runs} ({batter2_balls})",
+            "NonStrikerScore": f"B: {batter2_balls}",
             "BowlerName": bowler_name,
             "BowlerFigures": bowler_figures
         }
@@ -107,12 +99,12 @@ def background_scraper():
     print("Background scraper thread started successfully.", flush=True)
     while True:
         try:
-            print(f"Fetching CricBay URL: {CRICBAY_MATCH_URL}", flush=True)
-            resp = requests.get(CRICBAY_MATCH_URL, headers=HEADERS, timeout=10)
-            print(f"CricBay Response Status: {resp.status_code}", flush=True)
+            print(f"Fetching CricHeroes URL: {CRICHEROES_MATCH_URL}", flush=True)
+            resp = requests.get(CRICHEROES_MATCH_URL, headers=HEADERS, timeout=10)
+            print(f"CricHeroes Response Status: {resp.status_code}", flush=True)
             
             if resp.status_code == 200:
-                current_state = parse_cricbay_scorecard(resp.text)
+                current_state = parse_cricheroes_scorecard(resp.text)
                 print(f"Parsed State: {current_state}", flush=True)
                 
                 if current_state and current_state != last_state:
