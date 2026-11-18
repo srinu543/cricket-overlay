@@ -1,4 +1,4 @@
-requests
-curl_cffi
+playwright
 beautifulsoup4
 flask
+requests
