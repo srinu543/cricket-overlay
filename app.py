@@ -2,7 +2,6 @@ import os
 import time
 import threading
 import requests
-from bs4 import BeautifulSoup
 from flask import Flask
 from playwright.sync_api import sync_playwright
 
@@ -20,56 +19,29 @@ def home():
 
 def parse_cricheroes_scorecard(page):
     try:
-        # Extract all visible text from the main score area or body
         body_text = page.inner_text("body")
         
+        # DEBUG: Print a chunk of the page text to Render logs to inspect formatting
+        print(f"--- PAGE TEXT SAMPLE ---\n{body_text[:400]}\n------------------------", flush=True)
+
         runs = 0
         wickets = 0
         overs = 0.0
         team_name = "Team 1"
-
-        # Search the rendered text for score patterns (e.g., "10/1" or similar score layouts)
-        lines = body_text.split("\n")
-        for line in lines:
-            line = line.strip()
-            # Look for typical score formats like "10/1" next to overs
-            if "/" in line and len(line) < 15:
-                parts = line.split("/")
-                if parts[0].isdigit() and parts[1].isdigit():
-                    runs = int(parts[0])
-                    wickets = int(parts[1])
-                    break
-
-        # Extract overs using Playwright locator for over indicators
-        try:
-            over_element = page.locator("span:has-text('Ov')").first.inner_text()
-            clean_overs = over_element.replace("(", "").replace(" Ov)", "").replace("Ov", "").strip()
-            if clean_overs:
-                overs = float(clean_overs)
-        except Exception:
-            pass
-
-        # Extract active batters and bowlers from table cells if visible
-        batter1_name, batter1_runs = "Batter 1", 0
-        batter2_name, batter2_runs = "Batter 2", 0
-        bowler_name = "Bowler"
-        bowler_overs_val = 0.0
-        bowler_runs_val = 0
-        bowler_wickets_val = "0"
 
         return {
             "Team Batting": team_name,
             "Batting Team Runs": runs,
             "Batting Team Wickets": wickets,
             "Overs": overs,
-            "Bastman 1": batter1_name,
-            "Batsman 1 Score": batter1_runs,
-            "Batsman 2": batter2_name,
-            "Batsman 2 Score": batter2_runs,
-            "Bowler Name": bowler_name,
-            "Bowler Overs": bowler_overs_val,
-            "Bowler Runs": bowler_runs_val,
-            "Bowler Wickets": bowler_wickets_val,
+            "Bastman 1": "Batter 1",
+            "Batsman 1 Score": 0,
+            "Batsman 2": "Batter 2",
+            "Batsman 2 Score": 0,
+            "Bowler Name": "Bowler",
+            "Bowler Overs": 0.0,
+            "Bowler Runs": 0,
+            "Bowler Wickets": "0",
             "Show Bowler Stats": True
         }
     except Exception as e:
@@ -84,7 +56,7 @@ def update_uno_overlay(data):
     }
     try:
         response = requests.put(UNO_API_URL, json=payload, timeout=5)
-        print(f"Overlay Update Response Status: {response.status_code} - Response: {response.text}", flush=True)
+        print(f"Overlay Update Response Status: {response.status_code}", flush=True)
     except Exception as e:
         print(f"API Request Error: {e}", flush=True)
 
@@ -107,16 +79,14 @@ def background_scraper():
         except Exception as e:
             print(f"Navigation error: {e}", flush=True)
 
-        while True:
+        while Time.sleep(5) or True:
             try:
-                # Reload periodically to get fresh match data
                 page.reload(wait_until="networkidle", timeout=30000)
                 time.sleep(3)
                 
                 current_state = parse_cricheroes_scorecard(page)
                 
                 if current_state and current_state != last_state:
-                    print(f"Parsed State Update: {current_state}", flush=True)
                     update_uno_overlay(current_state)
                     last_state = current_state
             except Exception as e:
