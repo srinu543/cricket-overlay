@@ -8,10 +8,8 @@ from playwright.sync_api import sync_playwright
 
 app = Flask(__name__)
 
-# Your overlays.uno API endpoint and Overlay ID
 UNO_API_URL = "https://app.overlays.uno/apiv2/controlapps/3faAKlnUjVC21DaVd2bvYY/api"
 OVERLAY_ID = "3faAKlnUjVC21DaVd2bvYY"
-
 TARGET_MATCH_URL = "https://cricheroes.com/scorecard/28364240/individual/test-vs-test2/live"
 
 last_state = None
@@ -23,25 +21,23 @@ def home():
 def parse_cricheroes_scorecard(html_content):
     soup = BeautifulSoup(html_content, "html.parser")
     try:
-        # Extract Team Names
-        team_name_elements = soup.select(".styles-module-scss-module__0yl5Ha__teamName")
-        team1_name = team_name_elements[0].get_text(strip=True) if len(team_name_elements) > 0 else "Team A"
-
-        # Extract Overs info for Team 1 score baby step
+        # Extract Overs info (e.g. "(0.4 Ov)")
         over_spans = soup.select(".styles-module-scss-module__0yl5Ha__overSpan")
-        team1_overs = over_spans[0].get_text(strip=True) if len(over_spans) > 0 else "(0.0 Ov)"
+        overs_text = over_spans[0].get_text(strip=True) if len(over_spans) > 0 else "0 (0.0 Ov)"
+        
+        # Clean up overs string to get just numbers if needed, e.g., "0.4"
+        clean_overs = overs_text.replace("(", "").replace(" Ov)", "").strip()
 
-        # Baby step: focusing on team name and score first
+        # For our baby step, let's map to keys matching the control panel
         return {
-            "Team1Name": team1_name,
-            "Team1Score": team1_overs
+            "overs": clean_overs,
+            "battingTeamRuns": "7"  # Hardcoded or extracted from score canvas for now
         }
     except Exception as e:
         print(f"Parsing Error: {e}", flush=True)
         return None
 
 def update_uno_overlay(data):
-    # FIXED: The API schema requires "id" instead of "overlayId"
     payload = {
         "command": "SetOverlayContent",
         "id": OVERLAY_ID,
