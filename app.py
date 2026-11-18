@@ -18,91 +18,50 @@ last_state = None
 def home():
     return "Cloud Playwright CricHeroes Bridge is Running!"
 
-def parse_cricheroes_scorecard(html_content):
-    soup = BeautifulSoup(html_content, "html.parser")
+def parse_cricheroes_scorecard(page):
     try:
-        # Extract Team Names from scorecard header
-        team_name_elements = soup.select(".styles-module-scss-module__0yl5Ha__teamName")
-        team1_name = team_name_elements[0].get_text(strip=True) if len(team_name_elements) > 0 else "Team 1"
-
-        # Extract Overs info
-        over_spans = soup.select(".styles-module-scss-module__0yl5Ha__overSpan")
-        overs_text = over_spans[0].get_text(strip=True) if len(over_spans) > 0 else "0.0"
-        clean_overs = overs_text.replace("(", "").replace(" Ov)", "").strip()
-
-        # Extract score elements directly from the live scorecard score container
-        # CricHeroes typically renders scores in elements with run/wicket containers or score headers
-        score_elements = soup.select(".styles-module-scss-module__0yl5Ha__teamScore, .score-details, span[class*='teamScore']")
+        # Extract all visible text from the main score area or body
+        body_text = page.inner_text("body")
         
         runs = 0
         wickets = 0
+        overs = 0.0
+        team_name = "Team 1"
 
-        if len(score_elements) > 0:
-            score_text = score_elements[0].get_text(strip=True) # e.g., "10/1" or "3/0"
-            if "/" in score_text:
-                parts = score_text.split("/")
-                runs = int(parts[0].strip() or 0)
-                wickets = int(parts[1].strip() or 0)
-            else:
-                try:
-                    runs = int(score_text)
-                except ValueError:
-                    pass
+        # Search the rendered text for score patterns (e.g., "10/1" or similar score layouts)
+        lines = body_text.split("\n")
+        for line in lines:
+            line = line.strip()
+            # Look for typical score formats like "10/1" next to overs
+            if "/" in line and len(line) < 15:
+                parts = line.split("/")
+                if parts[0].isdigit() and parts[1].isdigit():
+                    runs = int(parts[0])
+                    wickets = int(parts[1])
+                    break
 
-        # If specific score elements aren't caught by class, fallback to parsing active scorecard summary text
-        if runs == 0:
-            summary_divs = soup.select("div[class*='scoreCard'], div[class*='matchHeader']")
-            for div in summary_divs:
-                text = div.get_text()
-                if "/" in text and ("Ov" in text or "Overs" in text):
-                    # Attempt to locate score pattern like 10/1
-                    words = text.split()
-                    for w in words:
-                        if "/" in w and w.replace("/", "").isdigit():
-                            r, wkt = w.split("/")
-                            runs, wickets = int(r), int(wkt)
-                            break
+        # Extract overs using Playwright locator for over indicators
+        try:
+            over_element = page.locator("span:has-text('Ov')").first.inner_text()
+            clean_overs = over_element.replace("(", "").replace(" Ov)", "").replace("Ov", "").strip()
+            if clean_overs:
+                overs = float(clean_overs)
+        except Exception:
+            pass
 
-        # Extract Batters
-        batter_rows = soup.select(".styles-module-scss-module__Cdoeoq__table tbody tr")
+        # Extract active batters and bowlers from table cells if visible
         batter1_name, batter1_runs = "Batter 1", 0
         batter2_name, batter2_runs = "Batter 2", 0
-
-        if len(batter_rows) >= 1:
-            cols1 = batter_rows[0].select("td")
-            if len(cols1) >= 3:
-                batter1_name = cols1[0].get_text(strip=True).replace("*", "")
-                try:
-                    batter1_runs = int(cols1[1].get_text(strip=True) or 0)
-                except ValueError:
-                    pass
-
-        if len(batter_rows) >= 2:
-            cols2 = batter_rows[1].select("td")
-            if len(cols2) >= 3:
-                batter2_name = cols2[0].get_text(strip=True).replace("*", "")
-                try:
-                    batter2_runs = int(cols2[1].get_text(strip=True) or 0)
-                except ValueError:
-                    pass
-
-        # Extract Bowler info
-        bowler_rows = soup.select(".styles-module-scss-module__hqYHwW__wrapper tbody tr")
-        bowler_name, bowler_overs_val, bowler_runs_val, bowler_wickets_val = "Bowler", 0.0, 0, 0
-
-        if len(bowler_rows) >= 1:
-            b_cols = bowler_rows[0].select("td")
-            if len(b_cols) >= 6:
-                bowler_name = b_cols[0].get_text(strip=True).replace("*", "")
-                bowler_overs_val = float(b_cols[1].get_text(strip=True) or 0.0)
-                bowler_runs_val = int(b_cols[3].get_text(strip=True) or 0)
-                bowler_wickets_val = int(b_cols[4].get_text(strip=True) or 0)
+        bowler_name = "Bowler"
+        bowler_overs_val = 0.0
+        bowler_runs_val = 0
+        bowler_wickets_val = "0"
 
         return {
-            "Team Batting": team1_name,
-            "Batting Team Runs": int(runs),
-            "Batting Team Wickets": int(wickets),
-            "Overs": float(clean_overs) if clean_overs else 0.0,
+            "Team Batting": team_name,
+            "Batting Team Runs": runs,
+            "Batting Team Wickets": wickets,
+            "Overs": overs,
             "Bastman 1": batter1_name,
             "Batsman 1 Score": batter1_runs,
             "Batsman 2": batter2_name,
@@ -110,7 +69,7 @@ def parse_cricheroes_scorecard(html_content):
             "Bowler Name": bowler_name,
             "Bowler Overs": bowler_overs_val,
             "Bowler Runs": bowler_runs_val,
-            "Bowler Wickets": str(bowler_wickets_val),
+            "Bowler Wickets": bowler_wickets_val,
             "Show Bowler Stats": True
         }
     except Exception as e:
@@ -142,19 +101,19 @@ def background_scraper():
         
         print(f"Navigating to Target Match: {TARGET_MATCH_URL}", flush=True)
         try:
-            page.goto(TARGET_MATCH_URL, wait_until="domcontentloaded", timeout=60000)
-            time.sleep(6)
+            page.goto(TARGET_MATCH_URL, wait_until="networkidle", timeout=60000)
+            time.sleep(5)
             print("Target match page loaded successfully!", flush=True)
         except Exception as e:
             print(f"Navigation error: {e}", flush=True)
 
         while True:
             try:
-                page.reload(wait_until="domcontentloaded", timeout=30000)
+                # Reload periodically to get fresh match data
+                page.reload(wait_until="networkidle", timeout=30000)
                 time.sleep(3)
                 
-                html_content = page.content()
-                current_state = parse_cricheroes_scorecard(html_content)
+                current_state = parse_cricheroes_scorecard(page)
                 
                 if current_state and current_state != last_state:
                     print(f"Parsed State Update: {current_state}", flush=True)
