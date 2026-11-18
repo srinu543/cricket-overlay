@@ -1,22 +1,23 @@
 import os
 import time
 import threading
-from curl_cffi import requests
+import requests
 from bs4 import BeautifulSoup
 from flask import Flask
+from playwright.sync_api import sync_playwright
 
 app = Flask(__name__)
 
 # Your overlays.uno API endpoint
 UNO_API_URL = "https://app.overlays.uno/apiv2/controlapps/3faAKlnUjVC21DaVd2bvYY/api"
 # Your live CricHeroes match URL
-CRICHEROES_MATCH_URL = "https://cricheroes.com/scorecard/28364240/individual/test-vs-test2/live"
+TARGET_MATCH_URL = "https://cricheroes.com/scorecard/28364240/individual/test-vs-test2/live"
 
 last_state = None
 
 @app.route("/")
 def home():
-    return "CricHeroes Overlay Bridge is Running!"
+    return "Cloud Playwright CricHeroes Bridge is Running!"
 
 def parse_cricheroes_scorecard(html_content):
     soup = BeautifulSoup(html_content, "html.parser")
@@ -90,29 +91,43 @@ def update_uno_overlay(data):
 
 def background_scraper():
     global last_state
-    print("Background scraper thread started successfully.", flush=True)
-    while True:
+    print("Launching cloud Playwright browser thread...", flush=True)
+    
+    with sync_playwright() as p:
+        browser = p.chromium.launch(
+            headless=True,
+            args=["--disable-dev-shm-usage", "--no-sandbox"]
+        )
+        page = browser.new_page()
+        
+        print(f"Navigating to Target Match: {TARGET_MATCH_URL}", flush=True)
         try:
-            print(f"Fetching CricHeroes URL: {CRICHEROES_MATCH_URL}", flush=True)
-            # Use curl_cffi with Chrome TLS impersonation to bypass Cloudflare
-            resp = requests.get(CRICHEROES_MATCH_URL, impersonate="chrome", timeout=10)
-            print(f"CricHeroes Response Status: {resp.status_code}", flush=True)
-            
-            if resp.status_code == 200:
-                current_state = parse_cricheroes_scorecard(resp.text)
-                print(f"Parsed State: {current_state}", flush=True)
+            page.goto(TARGET_MATCH_URL, wait_until="domcontentloaded", timeout=60000)
+            time.sleep(5) # Allow React app to initialize
+        except Exception as e:
+            print(f"Initial navigation error: {e}", flush=True)
+
+        while True:
+            try:
+                # Refresh page or pull updated DOM content dynamically
+                html_content = page.content()
+                current_state = parse_cricheroes_scorecard(html_content)
                 
                 if current_state and current_state != last_state:
+                    print(f"Parsed State Update: {current_state}", flush=True)
                     update_uno_overlay(current_state)
                     last_state = current_state
-        except Exception as e:
-            print(f"CRITICAL SCRAPER ERROR: {e}", flush=True)
-        time.sleep(5)
+            except Exception as e:
+                print(f"Scraper Loop Error: {e}", flush=True)
+            
+            time.sleep(5)
 
 if __name__ == "__main__":
+    # Start background scraping thread
     t = threading.Thread(target=background_scraper)
     t.daemon = True
     t.start()
     
-    port = int(os.environ.get("PORT", 5000))
+    # Run Flask web server to satisfy Render port binding requirements
+    port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
