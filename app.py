@@ -1,7 +1,7 @@
 import os
 import time
 import threading
-import requests
+from curl_cffi import requests
 from bs4 import BeautifulSoup
 from flask import Flask
 
@@ -11,11 +11,6 @@ app = Flask(__name__)
 UNO_API_URL = "https://app.overlays.uno/apiv2/controlapps/3faAKlnUjVC21DaVd2bvYY/api"
 # Your live CricHeroes match URL
 CRICHEROES_MATCH_URL = "https://cricheroes.com/scorecard/28364240/individual/test-vs-test2/live"
-
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-}
 
 last_state = None
 
@@ -36,16 +31,15 @@ def parse_cricheroes_scorecard(html_content):
         team1_overs = over_spans[0].get_text(strip=True) if len(over_spans) > 0 else "(0.0 Ov)"
         team2_overs = over_spans[1].get_text(strip=True) if len(over_spans) > 1 else "(0.0 Ov)"
 
-        # Extract Batters from the live scorecard table
+        # Extract Batters from live scorecard table
         batter_rows = soup.select(".styles-module-scss-module__Cdoeoq__table tbody tr")
-        batter1_name, batter1_runs, batter1_balls = "Batter 1", "0", "0"
-        batter2_name, batter2_runs, batter2_balls = "Batter 2", "0", "0"
+        batter1_name, batter1_balls = "Batter 1", "0"
+        batter2_name, batter2_balls = "Batter 2", "0"
 
         if len(batter_rows) >= 1:
             cols1 = batter_rows[0].select("td")
             if len(cols1) >= 3:
                 batter1_name = cols1[0].get_text(strip=True)
-                # CricHeroes uses canvas for runs, but balls is plain text in col 2
                 batter1_balls = cols1[2].get_text(strip=True)
 
         if len(batter_rows) >= 2:
@@ -54,7 +48,7 @@ def parse_cricheroes_scorecard(html_content):
                 batter2_name = cols2[0].get_text(strip=True)
                 batter2_balls = cols2[2].get_text(strip=True)
 
-        # Extract Bowler info from the second table
+        # Extract Bowler info
         bowler_rows = soup.select(".styles-module-scss-module__hqYHwW__wrapper tbody tr")
         bowler_name, bowler_overs = "Bowler", "0.0"
         bowler_runs, bowler_wickets, bowler_econ = "0", "0", "0.0"
@@ -100,7 +94,8 @@ def background_scraper():
     while True:
         try:
             print(f"Fetching CricHeroes URL: {CRICHEROES_MATCH_URL}", flush=True)
-            resp = requests.get(CRICHEROES_MATCH_URL, headers=HEADERS, timeout=10)
+            # Use curl_cffi with Chrome TLS impersonation to bypass Cloudflare
+            resp = requests.get(CRICHEROES_MATCH_URL, impersonate="chrome", timeout=10)
             print(f"CricHeroes Response Status: {resp.status_code}", flush=True)
             
             if resp.status_code == 200:
